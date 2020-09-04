@@ -200,6 +200,7 @@ int DAS_turn_signal_request = 0;
 //fake DAS for DAS_steeringControls
 int DAS_steeringAngle = 0x4000;
 int DAS_steeringEnabled = 0;
+int prev_DAS_steeringEnabled = 0;
 
 //fake DAS controll
 int time_last_DAS_data = -1;
@@ -1693,10 +1694,17 @@ static int tesla_tx_hook(CAN_FIFOMailBox_TypeDef *to_send)
     time_last_DAS_data = current_car_time;
     DAS_present = 1;
     DAS_steeringAngle = ((b7 << 8) + b6) & 0x7FFF;
+    prev_DAS_steeringEnabled = DAS_steeringEnabled;
     DAS_steeringEnabled = (b7 >> 7);
 
     desired_angle = DAS_steeringAngle * 0.1 - 1638.35;
     //bool violation = 0;
+      
+    // To enable automatic emergency takeover, permit steering
+    // whenever a DAS message requests it.
+    if (DAS_steeringEnabled == 1 && prev_DAS_steeringEnabled != 1) {
+      controls_allowed = 1;
+    }
 
     if (DAS_steeringEnabled == 0) {
       //steering is not enabled, do not check angles and do send
