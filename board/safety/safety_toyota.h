@@ -43,6 +43,14 @@ int toyota_cruise_engaged_last = 0;       // cruise state
 bool toyota_moving = false;
 struct sample_t toyota_torque_meas;       // last 3 motor torques produced by the eps
 
+const int OPENPILOT_SELFDRIVE_MSG_ID = 0x3A9;  // TODO: Find some non-conflicting message ID
+static int requested_steering_torque = 0;
+static int requested_speed = 0;
+static int selfdrive = 0;
+static int emergency = 0;
+static uint32_t selfdrive_ts = 0;  // timestamp of last OP message
+const uint32_t OPENPILOT_SELFDRIVE_INTERVAL = 300000;    // max 300ms between OP control messages
+
 
 static uint8_t toyota_compute_checksum(CAN_FIFOMailBox_TypeDef *to_push) {
   int addr = GET_ADDR(to_push);
@@ -93,6 +101,20 @@ static int toyota_rx_hook(CAN_FIFOMailBox_TypeDef *to_push) {
         controls_allowed = 1;
       }
       toyota_cruise_engaged_last = cruise_engaged;
+    }
+
+    // Look for an all-in-one message from OpenPilot that specifies all the selfdrive info
+    if (addr == OPENPILOT_SELFDRIVE_MSG_ID) {
+        // TODO: Fill in the correct bytes offsets according to the definition of OPENPILOT_SELFDRIVE_MSG_ID CAN message
+        requested_steering_torque = GET_BYTE(to_push, 1);
+        requested_speed = GET_BYTE(to_push, 2);
+        selfdrive = GET_BYTE(to_push, 3);
+        emergency = GET_BYTE(to_push, 4);
+        selfdrive_ts = TIM2->CNT;
+
+        if (emergency == 1) {
+            controls_allowed = 1;
+        }
     }
 
     // sample speed
@@ -252,16 +274,25 @@ static int toyota_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd) {
       bus_fwd = 2;
     }
     if (bus_num == 2) {
-      int addr = GET_ADDR(to_fwd);
-      // block stock lkas messages and stock acc messages (if OP is doing ACC)
-      // in TSS2, 0x191 is LTA which we need to block to avoid controls collision
-      int is_lkas_msg = ((addr == 0x2E4) || (addr == 0x412) || (addr == 0x191));
-      // in TSS2 the camera does ACC as well, so filter 0x343
-      int is_acc_msg = (addr == 0x343);
-      int block_msg = is_lkas_msg || is_acc_msg;
-      if (!block_msg) {
+        int addr = GET_ADDR(to_fwd);
         bus_fwd = 0;
-      }
+        uint32_t ts = TIM2->CNT;
+        uint32_t ts_elapsed = get_ts_elapsed(ts, selfdrive_ts);
+        if (selfdrive == 1 && ts_elapsed < OPENPILOT_SELFDRIVE_INTERVAL) {
+          // TODO: bitbang LKAS and ACC messages to contain requested_steering_torque and requested_speed
+          if (addr == 0x2E4) {
+              // LKAS
+          }
+          else if (addr == 0x412) {
+              // LKAS
+          }
+          else if (addr == 0x191) {
+              // in TSS2, 0x191 is LTA which we need to block to avoid controls collision
+          }
+          else if (addr == 0x343) {
+              // in TSS2 the camera does ACC as well, so filter 0x343
+          }
+        }
     }
   }
   return bus_fwd;
