@@ -103,20 +103,6 @@ static int toyota_rx_hook(CAN_FIFOMailBox_TypeDef *to_push) {
       toyota_cruise_engaged_last = cruise_engaged;
     }
 
-    // Look for an all-in-one message from OpenPilot that specifies all the selfdrive info
-    if (addr == OPENPILOT_SELFDRIVE_MSG_ID) {
-        // TODO: Fill in the correct bytes offsets according to the definition of OPENPILOT_SELFDRIVE_MSG_ID CAN message
-        requested_steering_torque = GET_BYTE(to_push, 1);
-        requested_speed = GET_BYTE(to_push, 2);
-        selfdrive = GET_BYTE(to_push, 3);
-        emergency = GET_BYTE(to_push, 4);
-        selfdrive_ts = TIM2->CNT;
-
-        if (emergency == 1) {
-            controls_allowed = 1;
-        }
-    }
-
     // sample speed
     if (addr == 0xaa) {
       int speed = 0;
@@ -172,6 +158,22 @@ static int toyota_tx_hook(CAN_FIFOMailBox_TypeDef *to_send) {
   int tx = 1;
   int addr = GET_ADDR(to_send);
   int bus = GET_BUS(to_send);
+
+  // Look for an all-in-one message from OpenPilot that specifies all the selfdrive info
+  // This message should be swallowed by the Panda. It is not meant for the vehicle.
+  if (addr == OPENPILOT_SELFDRIVE_MSG_ID) {
+      // TODO: Fill in the correct bytes offsets according to the definition of OPENPILOT_SELFDRIVE_MSG_ID CAN message
+      requested_steering_torque = GET_BYTE(to_send, 1);
+      requested_speed = GET_BYTE(to_send, 2);
+      selfdrive = GET_BYTE(to_send, 3);
+      emergency = GET_BYTE(to_send, 4);
+      selfdrive_ts = TIM2->CNT;
+
+      if (emergency == 1) {
+          controls_allowed = 1;
+      }
+      tx = 0;
+  }
 
   if (!msg_allowed(addr, bus, TOYOTA_TX_MSGS, sizeof(TOYOTA_TX_MSGS)/sizeof(TOYOTA_TX_MSGS[0]))) {
     tx = 0;
