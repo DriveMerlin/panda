@@ -43,11 +43,15 @@ int toyota_cruise_engaged_last = 0;       // cruise state
 bool toyota_moving = false;
 struct sample_t toyota_torque_meas;       // last 3 motor torques produced by the eps
 
-const int OPENPILOT_SELFDRIVE_MSG_ID = 0x3A9;  // TODO: Find some non-conflicting message ID
+const int OPENPILOT_SELFDRIVE_MSG_ID = 0x20B;  // TODO: Find some non-conflicting message ID
+const int OPENPILOT_TOYOTA_SELFDRIVE_MSG_ID = 0x20C;  // TODO: Find some non-conflicting message ID
 static int requested_steering_torque = 0;
-static int requested_speed = 0;
+static int requested_accel = 0;
 static int selfdrive = 0;
 static int emergency = 0;
+static int mini_car = 0;
+static int release_standstill = 0;
+static int cancel_req = 0;
 static uint32_t selfdrive_ts = 0;  // timestamp of last OP message
 const uint32_t OPENPILOT_SELFDRIVE_INTERVAL = 300000;    // max 300ms between OP control messages
 
@@ -164,7 +168,7 @@ static int toyota_tx_hook(CAN_FIFOMailBox_TypeDef *to_send) {
   if (addr == OPENPILOT_SELFDRIVE_MSG_ID) {
       // TODO: Fill in the correct bytes offsets according to the definition of OPENPILOT_SELFDRIVE_MSG_ID CAN message
       requested_steering_torque = GET_BYTE(to_send, 1);
-      requested_speed = GET_BYTE(to_send, 2);
+      requested_accel = GET_BYTE(to_send, 2);
       selfdrive = GET_BYTE(to_send, 3);
       emergency = GET_BYTE(to_send, 4);
       selfdrive_ts = TIM2->CNT;
@@ -174,6 +178,14 @@ static int toyota_tx_hook(CAN_FIFOMailBox_TypeDef *to_send) {
       }
       tx = 0;
   }
+
+  if (addr == OPENPILOT_TOYOTA_SELFDRIVE_MSG_ID) {
+        // TODO: Fill in the correct bytes offsets according to the definition of OPENPILOT_TOYOTA_SELFDRIVE_MSG_ID CAN message
+        mini_car = GET_BYTE(to_send, 0);
+        release_standstill = GET_BYTE(to_send, 1);
+        cancel_req = GET_BYTE(to_send, 2);
+        tx = 0;
+    }
 
   if (!msg_allowed(addr, bus, TOYOTA_TX_MSGS, sizeof(TOYOTA_TX_MSGS)/sizeof(TOYOTA_TX_MSGS[0]))) {
     tx = 0;
@@ -282,6 +294,7 @@ static int toyota_fwd_hook(int bus_num, CAN_FIFOMailBox_TypeDef *to_fwd) {
         uint32_t ts_elapsed = get_ts_elapsed(ts, selfdrive_ts);
         if (selfdrive == 1 && ts_elapsed < OPENPILOT_SELFDRIVE_INTERVAL) {
           // TODO: bitbang LKAS and ACC messages to contain requested_steering_torque and requested_speed
+          // Must also recalculate checksums.
           if (addr == 0x2E4) {
               // LKAS
           }
